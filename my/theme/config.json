@@ -47,5 +47,11 @@
   "library_ok_opens": true,
   "tile_menu": true,
   "show_library_pill": false,
-  "glass_style": "rim"
+  "glass_style": "rim",
+  "clock_wallpaper": true,
+  "greeting_name": "Alex",
+  "settings_key_keycodes": [
+    284
+  ],
+  "settings_key_panel": true
 }

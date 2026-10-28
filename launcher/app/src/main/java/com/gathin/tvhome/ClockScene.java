@@ -148,8 +148,18 @@ final class ClockScene {
         wallpaperRes = ctx.getResources();
     }
 
+    /** NNN.plain.jpg beside NNN.jpg, when the theme ships one: the picture without Home's baked dock frost. */
+    private static File plainCopy(File file) {
+        if (file == null) return null;
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        if (dot <= 0) return file;
+        File plain = new File(file.getParentFile(), name.substring(0, dot) + ".plain" + name.substring(dot));
+        return plain.isFile() ? plain : file;
+    }
+
     private void loadWallpaper() {
-        File file = wallpaperFile;
+        File file = plainCopy(wallpaperFile);
         int shade = wallpaperShade;
         Resources res = wallpaperRes;
         DisplayMetrics dm = res.getDisplayMetrics();

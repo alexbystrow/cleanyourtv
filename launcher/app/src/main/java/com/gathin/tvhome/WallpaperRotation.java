@@ -25,6 +25,7 @@ final class WallpaperRotation {
         Arrays.sort(entries, Comparator.comparing(File::getName));
         for (File entry : entries) {
             String name = entry.getName().toLowerCase(Locale.ROOT);
+            if (name.contains(".plain.")) continue;   // the screensaver's copy without Home's baked frost
             if (entry.isFile() && entry.length() > 0 && entry.length() <= 10 * 1024 * 1024
                     && (name.endsWith(".jpg") || name.endsWith(".jpeg")
                     || name.endsWith(".png") || name.endsWith(".webp"))) {
