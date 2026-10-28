@@ -1,0 +1,13 @@
+# Step 3 (2026-10-28): duplicates and unused Xiaomi extras, chosen by the owner
+com.google.android.youtube.tv              # SmartTube replaces it
+com.google.android.youtube.tvmusic         # Spotify instead
+com.google.android.marvin.talkback
+com.google.android.syncadapters.calendar
+com.xiaomi.android.tvsetup.partnercustomizer   # remote shortcut keys, launcher app_keys handles them
+com.xiaomi.mimusic2                        # USB media apps
+com.mitv.gallery
+com.mitv.videoplayer
+com.xiaomi.mitv.mediaexplorer
+com.xiaomi.mitv.smartshare                 # Miracast
+com.xiaomi.wfdsinkhelperservice
+com.xiaomi.tvqs.overseas                   # log and crash uploader (untested disabled in the example list)

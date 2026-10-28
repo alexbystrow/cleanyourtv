@@ -102,6 +102,17 @@ public class GlassView extends View {
             }
         }
         if (flat) {
+            // Inner shadow: dark rings just inside the rim, fading inwards, so the edge sits into the tile.
+            int rings = 16;
+            float depth = 14f * density, step = depth / rings;
+            glow.setStrokeWidth(step + 0.5f);
+            for (int i = 0; i < rings; i++) {
+                float o = step * (i + 0.5f);
+                float t = 1f - (float) i / rings;
+                glow.setColor(Math.round(0x90 * t * t) << 24);
+                canvas.drawRoundRect(rect.left + o, rect.top + o, rect.right - o, rect.bottom - o,
+                        Math.max(0f, radius - o), Math.max(0f, radius - o), glow);
+            }
             canvas.drawRoundRect(rect, radius, radius, rim);
             return;
         }
