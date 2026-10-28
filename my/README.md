@@ -12,10 +12,8 @@ Personal fork branch `mybox`. Box: MiTV-AFKR0, Google TV 11, firmware RTT0.21122
 
 Launcher changes on this branch: an inner shadow inside the `rim` / `halo` focus border (`GlassView.java`), dark
 top-bar buttons (`pill_bg.xml`), `NNN.plain.jpg` support for the screensaver (unused now that the frost is live),
-the Continue-watching top shelf (`TopShelf.java`, `WatchNext.java`; needs
-`pm grant com.gathin.tvhome android.permission.READ_TV_LISTINGS` after each install, and INTERNET for posters),
 motion in `WallpaperPlayer.java` (Ken Burns, crossfade, parallax, live dock frost from a 1/32 blurred copy),
-a cascading shelf, and a dock highlight that ignores advanced_effects' lift (dock tiles never lift).
+and a dock highlight that ignores advanced_effects' lift (dock tiles never lift).
 
 Theme extras: greeting "Alex", the clock screensaver over the wallpaper, the Apps button (keycode 284) opens the
 quick settings panel. Add-on: Sleep Timer.

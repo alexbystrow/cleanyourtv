@@ -144,8 +144,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private GlassView glass;
     private View ambient;
     private TextView heroName;
-    /** Continue watching for the focused dock app, above the dock (TopShelf). */
-    private TopShelf topShelf;
     /** The top shelf: heroName, plus the cinematic shelf's "Last opened" line and dock position dots. */
     private View hero;
     private TextView heroMeta;
@@ -464,7 +462,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         coocaaSources = cfg.coocaaSources;
 
         root = findViewById(R.id.root);
-        topShelf = new TopShelf(this, root);
         root.setBackgroundColor(cfg.backgroundColor);
         // root fills the window with an opaque colour (Config keeps background_color opaque), so the window's own
         // black under it is a second full-screen fill on every frame for nothing. The starting window still uses
@@ -1016,7 +1013,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onResume() {
         super.onResume();
         resumed = true;
-        topShelf.refresh();
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -1295,7 +1291,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     protected void onDestroy() {
-        topShelf.destroy();
         super.onDestroy();
         if (gameDay != null) gameDay.shutdown();
         unregisterReceiver(packageReceiver);
@@ -1341,15 +1336,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (topShelf.onKey(event)) return true;
-        if (event.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP && event.getAction() == KeyEvent.ACTION_DOWN
-                && !reordering && dockRow) {
-            int pos = focusedTilePosition();
-            if (pos >= 0 && (singleRow || pos < COLUMNS) && topShelf.enter(getCurrentFocus())) {
-                glass.animate().alpha(0f).setDuration(120).start();
-                return true;
-            }
-        }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window.
         if (event.getKeyCode() >= 1000 && RemoteKeys.handle(this, event, homeAppKeys.get(event.getKeyCode()), null)) return true;
         if (handleSettingsKey(event)) return true;
@@ -1791,11 +1777,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 else grid.smoothScrollBy(0, dy);
             }
             showHero(position, scroll ? r.top - dy : r.top);
-            topShelf.show(adapter.packageAt(position), scroll ? r.top - dy : r.top);
             int dockPos = singleRow ? position : position % COLUMNS;
             wallpaperPlayer.setParallax(-(dockPos - (COLUMNS - 1) / 2f) * 7f * density);
         } else {
-            topShelf.hide();
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
             showGlowOnly(position);
