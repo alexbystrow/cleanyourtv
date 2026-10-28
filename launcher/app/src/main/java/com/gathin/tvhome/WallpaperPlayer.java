@@ -5,6 +5,12 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Outline;
+import android.graphics.RectF;
+import android.view.ViewOutlineProvider;
+import android.view.animation.LinearInterpolator;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -26,13 +32,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /** Displays and rotates a theme's local wallpaper images while Home is visible. */
 final class WallpaperPlayer {
     private final FrameLayout root;
-    private final ImageView image;
+    /**
+     * Motion (this fork): two layers that crossfade, each slowly zooming and drifting (Ken Burns) inside a stage that
+     * shifts with dock focus (parallax). The dock's frost is live: a tiny blurred copy of each picture, in a twin
+     * layer clipped to the band, with the same motion, so it always matches the picture behind the band.
+     */
+    private final FrameLayout stage, frostClip, frostStage;
+    private final ImageView[] layers = new ImageView[2], frosts = new ImageView[2];
+    private final Bitmap[] blurOf = new Bitmap[2];
+    private final Map<Bitmap, Bitmap> blurs = new ConcurrentHashMap<>();
+    private int front = -1;
+    private final RectF frostRect = new RectF();
+    private float frostRadius, parallax;
+    private static final float BASE_SCALE = 1.06f, END_SCALE = 1.14f;
+    private static final long FADE_MS = 1600;
     private final int backgroundColor;
     private final List<File> files;
     private final long interval;
@@ -85,15 +105,43 @@ final class WallpaperPlayer {
         DisplayMetrics metrics = context.getResources().getDisplayMetrics();
         width = metrics.widthPixels;
         height = metrics.heightPixels;
-        image = new ImageView(context);
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        stage = new FrameLayout(context);
+        frostStage = new FrameLayout(context);
+        frostClip = new FrameLayout(context);
+        frostClip.setVisibility(View.GONE);
+        // The layers are zoomed past the screen; let the stages draw that overscan when parallax shifts them.
+        stage.setClipChildren(false);
+        frostStage.setClipChildren(false);
+        root.setClipChildren(false);
+        frostClip.setClipToOutline(true);
+        frostClip.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), frostRadius);
+            }
+        });
+        ColorMatrix saturate = new ColorMatrix();
+        saturate.setSaturation(1.4f);
+        for (int i = 0; i < 2; i++) {
+            layers[i] = new ImageView(context);
+            layers[i].setScaleType(ImageView.ScaleType.CENTER_CROP);
+            layers[i].setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            layers[i].setAlpha(0f);
+            stage.addView(layers[i], new FrameLayout.LayoutParams(width, height));
+            frosts[i] = new ImageView(context);
+            frosts[i].setScaleType(ImageView.ScaleType.CENTER_CROP);
+            frosts[i].setColorFilter(new ColorMatrixColorFilter(saturate));
+            frosts[i].setAlpha(0f);
+            frostStage.addView(frosts[i], new FrameLayout.LayoutParams(width, height));
+        }
+        frostClip.addView(frostStage, new FrameLayout.LayoutParams(width, height));
         names = config.wallpaperCaptions && config.wallpaperEnabled && !files.isEmpty()
                 ? WallpaperCaptions.read(files.get(0).getParentFile()) : Collections.emptyMap();
         caption = names.isEmpty() ? null : makeCaption(context, root);
         if (config.wallpaperEnabled && !files.isEmpty()) {
-            root.addView(image, 0, new FrameLayout.LayoutParams(
+            root.addView(stage, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            root.addView(frostClip, 1, new FrameLayout.LayoutParams(0, 0));
             showFirst();
         }
     }
@@ -111,7 +159,7 @@ final class WallpaperPlayer {
         while (first != null) {
             Bitmap bitmap = decode(first);
             if (bitmap != null) {
-                show(bitmap);
+                show(bitmap, false);
                 // The picture covers the whole screen: the root's plain colour under it is overdraw.
                 root.setBackground(null);
                 displayed = first.getName();
@@ -140,7 +188,13 @@ final class WallpaperPlayer {
     /** Drops the wallpaper texture when Home is hidden and Android asks the process to free memory. */
     void releaseForMemoryPressure() {
         if (current == null) return;
-        image.setImageDrawable(null);
+        for (int i = 0; i < 2; i++) {
+            layers[i].animate().cancel();
+            layers[i].setImageDrawable(null);
+            frosts[i].setImageDrawable(null);
+            blurOf[i] = null;
+        }
+        front = -1;
         // The renderer may still have a queued frame that references this hardware bitmap. Drop our references and
         // let Android reclaim its native buffer after rendering releases it instead of recycling it mid-frame.
         current = null;
@@ -192,7 +246,7 @@ final class WallpaperPlayer {
                     update();
                     return;
                 }
-                show(bitmap);
+                show(bitmap, true);
                 displayed = next.getName();
                 showCaption(true);
                 if (!displayed.equals(previous) || changed == 0) {
@@ -260,13 +314,85 @@ final class WallpaperPlayer {
     }
 
     /** Puts a picture on screen and releases the previous one after a frame has drawn the new one. */
-    private void show(Bitmap bitmap) {
+    private void show(Bitmap bitmap, boolean fade) {
         Bitmap old = current;
         current = bitmap;
         // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
         root.setBackground(null);
-        image.setImageBitmap(bitmap);
-        if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+        int back = front;
+        int next = front == 0 ? 1 : 0;
+        front = next;
+        ImageView layer = layers[next], frost = frosts[next];
+        layer.setImageBitmap(bitmap);
+        blurOf[next] = blurs.remove(bitmap);
+        frost.setImageBitmap(blurOf[next]);
+        layer.bringToFront();
+        frost.bringToFront();
+        kenBurns(layer, frost);
+        long fadeMs = fade ? FADE_MS : 0;
+        layer.setAlpha(fade ? 0f : 1f);
+        frost.setAlpha(fade ? 0f : 1f);
+        layer.animate().alpha(1f).setDuration(fadeMs).withLayer().start();
+        frost.animate().alpha(1f).setDuration(fadeMs).start();
+        if (back >= 0) {
+            ImageView oldLayer = layers[back], oldFrost = frosts[back];
+            Bitmap oldBlur = blurOf[back];
+            layer.postDelayed(() -> {
+                if (front == back) return;   // swapped again meanwhile
+                oldLayer.animate().cancel();
+                oldFrost.animate().cancel();
+                oldLayer.setAlpha(0f);
+                oldFrost.setAlpha(0f);
+                oldLayer.setImageDrawable(null);
+                oldFrost.setImageDrawable(null);
+                if (old != null && old != bitmap) old.recycle();
+                if (oldBlur != null) oldBlur.recycle();
+            }, fadeMs + 500);
+        } else if (old != null && old != bitmap) {
+            layer.postDelayed(old::recycle, 500);
+        }
+    }
+
+    /** Slow zoom and drift over the rotation interval; the frost twin gets the very same motion. */
+    private void kenBurns(ImageView layer, ImageView frost) {
+        float room = (END_SCALE - BASE_SCALE) * width / 2f * 0.9f;
+        float dx = (random.nextBoolean() ? 1 : -1) * room * (0.4f + 0.6f * random.nextFloat());
+        float dy = (random.nextBoolean() ? 1 : -1) * room * 0.5f * random.nextFloat();
+        long ms = Math.max(interval, 60_000L) + FADE_MS;
+        for (View v : new View[]{layer, frost}) {
+            v.animate().cancel();
+            v.setScaleX(BASE_SCALE);
+            v.setScaleY(BASE_SCALE);
+            v.setTranslationX(0f);
+            v.setTranslationY(0f);
+            v.animate().scaleX(END_SCALE).scaleY(END_SCALE).translationX(dx).translationY(dy)
+                    .setDuration(ms).setInterpolator(new LinearInterpolator()).start();
+        }
+    }
+
+    /** Parallax: the picture shifts by px (a few dp, opposite to the dock focus); the frost follows. */
+    void setParallax(float px) {
+        parallax = px;
+        stage.animate().translationX(px).setDuration(420).start();
+        frostStage.animate().translationX(px - frostRect.left).setDuration(420).start();
+    }
+
+    /** The dock band's rectangle in root coordinates: the live frost is clipped to it. */
+    void setFrostRect(RectF band, float radius) {
+        if (band.equals(frostRect) && radius == frostRadius) return;
+        frostRect.set(band);
+        frostRadius = radius;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) frostClip.getLayoutParams();
+        lp.width = Math.round(band.width());
+        lp.height = Math.round(band.height());
+        lp.leftMargin = Math.round(band.left);
+        lp.topMargin = Math.round(band.top);
+        frostClip.setLayoutParams(lp);
+        frostClip.invalidateOutline();
+        frostStage.animate().cancel();
+        frostStage.setTranslationX(stage.getTranslationX() - band.left);
+        frostStage.setTranslationY(-band.top);
+        frostClip.setVisibility(View.VISIBLE);
     }
 
     private Bitmap decode(File file) {
@@ -291,11 +417,20 @@ final class WallpaperPlayer {
             Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
             if (decoded == null) return null;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+            Bitmap small = Bitmap.createScaledBitmap(decoded, Math.max(1, decoded.getWidth() / 8),
+                    Math.max(1, decoded.getHeight() / 8), true);
+            Bitmap blur = Bitmap.createScaledBitmap(small, Math.max(1, small.getWidth() / 4),
+                    Math.max(1, small.getHeight() / 4), true);
+            if (blur != small) small.recycle();
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
             Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);
-            if (gpu == null) return decoded;
+            if (gpu == null) {
+                blurs.put(decoded, blur);
+                return decoded;
+            }
             decoded.recycle();
+            blurs.put(gpu, blur);
             return gpu;
         } catch (Exception | OutOfMemoryError failure) {
             return null;

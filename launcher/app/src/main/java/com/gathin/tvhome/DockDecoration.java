@@ -19,6 +19,12 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    /** Where the band is drawn, in the grid's coordinates, for the live frost behind it (WallpaperPlayer). */
+    interface BandListener {
+        void onBand(RectF band, float radius);
+    }
+
+    BandListener bandListener;
 
     /** Extra band below the tiles for their names (always_show_names), in px. */
     private final float namesRoom;
@@ -146,6 +152,7 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
             shaderTop = rect.top;
             shaderBottom = rect.bottom;
         }
+        if (bandListener != null) bandListener.onBand(rect, radius);
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
     }

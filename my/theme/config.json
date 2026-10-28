@@ -27,7 +27,7 @@
   "ambient_glow": false,
   "app_glow": true,
   "fade_rows": true,
-  "focus_overshoot": false,
+  "focus_overshoot": true,
   "advanced_effects": false,
   "hidden_apps": [
     "com.alphainventor.filemanager",

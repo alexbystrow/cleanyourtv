@@ -11,8 +11,11 @@ Personal fork branch `mybox`. Box: MiTV-AFKR0, Google TV 11, firmware RTT0.21122
 | `theme/` | Nature calm with a 6-app dock, library button, no caption, faded photos, app-colour rim focus |
 
 Launcher changes on this branch: an inner shadow inside the `rim` / `halo` focus border (`GlassView.java`), dark
-top-bar buttons (`pill_bg.xml`), and the clock screensaver uses `NNN.plain.jpg` (no baked frost) when it exists,
-which Home's rotation skips (`ClockScene.java`, `WallpaperRotation.java`).
+top-bar buttons (`pill_bg.xml`), `NNN.plain.jpg` support for the screensaver (unused now that the frost is live),
+the Continue-watching top shelf (`TopShelf.java`, `WatchNext.java`; needs
+`pm grant com.gathin.tvhome android.permission.READ_TV_LISTINGS` after each install, and INTERNET for posters),
+motion in `WallpaperPlayer.java` (Ken Burns, crossfade, parallax, live dock frost from a 1/32 blurred copy),
+a cascading shelf, and a dock highlight that ignores advanced_effects' lift (dock tiles never lift).
 
 Theme extras: greeting "Alex", the clock screensaver over the wallpaper, the Apps button (keycode 284) opens the
 quick settings panel. Add-on: Sleep Timer.
@@ -26,10 +29,10 @@ HOME_KEY_SERVICE=1 launcher/build-and-install.sh      # one key helper only: it 
 addons/sleep-timer/build-and-install.sh
 tools/disable.sh my/lists/step2-setupwraith.txt
 tools/disable.sh my/lists/step3-extras.txt
-tools/theme.sh my/theme                              # ~6 min: 92 photos plus their .plain copies
+tools/theme.sh my/theme                              # ~3.5 min: 92 photos
 adb shell settings put secure screensaver_components com.gathin.tvhome/.ClockDream   # via tools/tv.py
 
-# Photos: python my/tools/fade.py <originals> <out> 0.45 0.6, copy each as NNN.plain.jpg, then frost.py on <out>
+# Photos: python my/tools/fade.py <originals 16:9> my/theme/wallpapers 0.45 0.6 (the frost is live, nothing else)
 ```
 
 Update from upstream: `git fetch upstream && git rebase upstream/main`, then rebuild.
